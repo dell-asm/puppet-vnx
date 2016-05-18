@@ -4,6 +4,8 @@ require 'rbvmomi'
 require 'trollop'
 require 'pathname'
 require 'nokogiri'
+require 'open3'
+
 
 puppet_dir = File.join(Pathname.new(__FILE__).parent.parent,'lib','puppet_x', 'puppetlabs')
 require "#{puppet_dir}/transport/emc_vnx"
@@ -18,9 +20,9 @@ end
 
 facts = {}
 
-def collect_emc_vnx_facts
+def collect_emc_vnx_facts opts
   facts = {}
-  xml_doc = collect_inventory
+  xml_doc = collect_inventory opts
   facts.merge!(sub_system_info(xml_doc))
   facts.merge!(sub_controller_info(xml_doc))
   facts.merge!(disk_info(xml_doc))
@@ -50,7 +52,7 @@ def sub_system_info(xml_doc)
       next if si.node_name == "text"
       software_facts[si.node_name] = si.content
     end
-    softwares << software_facts
+    softwares << {software_facts.first.last => software_facts}
   end
   facts['Softwares'] = softwares
 
@@ -67,7 +69,7 @@ def disk_info(xml_doc)
       next if disk_attr.node_name == "text"
       disk_info_hash[disk_attr.node_name] = disk_attr.content
     end
-    facts['disk_info'] << disk_info_hash
+    facts['disk_info'] << {disk_info_hash.first.last => disk_info_hash}
   end
   facts
 end
@@ -90,7 +92,7 @@ def raid_groups(xml_doc)
         raid_info[r_attr.node_name] = r_attr.content
       end
     end
-    facts['raid_groups'] << raid_info
+    facts['raid_groups'] << {raid_info.first.last => raid_info}
   end
   facts
 end
@@ -123,7 +125,7 @@ def disk_pools(xml_doc)
       end
 
     end
-    facts['disk_pools'] << disk_pool_info
+    facts['disk_pools'] << {disk_pool_info.first.last => disk_pool_info}
   end
   facts
 end
@@ -141,7 +143,7 @@ def pools(xml_doc)
         pool_info[p_attr.node_name] = p_attr.content
       end
     end
-    facts['pools'] << pool_info
+    facts['pools'] << {pool_info.first.last => pool_info}
   end
   facts
 end
@@ -176,7 +178,7 @@ def sub_controller_info(xml_doc)
       facts['HBAInfo'] = hba_info(s) if ['HBAInfo'].include?(s.node_name)
       container_info[s.node_name] = s.content
     end
-    controllers << container_info
+    controllers << {container_info.first.last => container_info}
   end
   facts['controllers'] = controllers
   facts
@@ -196,16 +198,22 @@ def hba_info(controller_path)
     hba_port_attr = hba_port.children
     port_hash = {}
     ['WWN', 'VendorDescription', 'NumberOfSPPorts' ].collect {|x| port_hash[x] = hba_port_attr.at_xpath("//SAN:#{x}").text}
-    hba_ports_info << port_hash
+    hba_ports_info << {port_hash.first.last => port_hash}
   end
   hba_facts['hba_ports_info'] = hba_ports_info
   hba_facts
 end
 
-def collect_inventory
-  # For now hardcoding the facts
-  data_capture = File.read('emc.xml')
-  xml_doc = Nokogiri::XML(data_capture)
+def collect_inventory opts
+  discovery_dump_file = "/tmp/emc_discovery_#{opts[:server]}.xml"
+  Open3.popen3("/opt/Navisphere/bin/naviseccli -User #{opts[:username]} -Scope 0 -Address #{opts[:server]} -Password #{opts[:password]} arrayconfig -capture  -output #{discovery_dump_file}") do |stdin, stdout, stderr, wait_thr|
+  end
+  until File.exist?(discovery_dump_file)
+    sleep 1
+  end
+  data_capture = File.read(discovery_dump_file)
+  File.delete(discovery_dump_file)
+  Nokogiri::XML(data_capture)
 end
 
 begin
@@ -213,7 +221,7 @@ begin
   args=['--trace']
 
   Timeout.timeout(opts[:timeout]) do
-    facts = collect_emc_vnx_facts
+    facts = collect_emc_vnx_facts opts
   end
 rescue Timeout::Error
   puts "Timed out trying to gather inventory"
@@ -226,8 +234,6 @@ else
     puts 'Could not get updated facts'
     exit 1
   else
-    puts 'Successfully gathered inventory.'
-    puts JSON.pretty_generate(JSON.parse(facts))
     File.write(opts[:output], facts)
   end
 end
