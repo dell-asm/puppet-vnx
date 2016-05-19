@@ -15,12 +15,13 @@ opts = Trollop::options do
   opt :username, 'EMC VNX username', :type => :string, :required => true
   opt :password, 'EMC VNX password', :type => :string, :default => ENV['PASSWORD']
   opt :timeout, 'command timeout', :default => 240
+  opt :community_string, 'EMC VNX community string', :default => 'public'
   opt :output, 'output facts to a file', :type => :string, :required => true
 end
 
 facts = {}
 
-def collect_emc_vnx_facts opts
+def collect_emc_vnx_facts(opts)
   facts = {}
   xml_doc = collect_inventory opts
   facts.merge!(sub_system_info(xml_doc))
@@ -29,6 +30,11 @@ def collect_emc_vnx_facts opts
   facts.merge!(raid_groups(xml_doc))
   facts.merge!(disk_pools(xml_doc))
   facts.merge!(pools(xml_doc))
+
+  # Updating all the facts to string format
+  facts.each do |f,v|
+    facts[f]=v.to_json.to_s
+  end
   facts.to_json
 end
 
@@ -206,10 +212,21 @@ end
 
 def collect_inventory opts
   discovery_dump_file = "/tmp/emc_discovery_#{opts[:server]}.xml"
-  Open3.popen3("/opt/Navisphere/bin/naviseccli -User #{opts[:username]} -Scope 0 -Address #{opts[:server]} -Password #{opts[:password]} arrayconfig -capture  -output #{discovery_dump_file}") do |stdin, stdout, stderr, wait_thr|
+  File.delete(discovery_dump_file) if File.exists?(discovery_dump_file)
+  emc_cli_cmd = "/opt/Navisphere/bin/naviseccli"
+
+  raise("Naviseccli not installed") unless File.exists?(emc_cli_cmd)
+  Open3.popen3("#{emc_cli_cmd} -User #{opts[:username]} -Scope 0 -Address #{opts[:server]} -Password #{opts[:password]} arrayconfig -capture  -output #{discovery_dump_file}") do |stdin, stdout, stderr, wait_thr|
   end
+  wait_counter = 1
   until File.exist?(discovery_dump_file)
+    break if wait_counter >= 120
     sleep 1
+    wait_counter += 1
+  end
+  if !File.exist?(discovery_dump_file)
+    puts "Failed to execute discovery for #{opts[:server]}. Discovery dump file not created"
+    exit 1
   end
   data_capture = File.read(discovery_dump_file)
   File.delete(discovery_dump_file)
