@@ -210,7 +210,7 @@ def hba_info(controller_path)
   hba_facts
 end
 
-def collect_inventory opts
+def collect_inventory(opts)
   discovery_dump_file = "/tmp/emc_discovery_#{opts[:server]}.xml"
   File.delete(discovery_dump_file) if File.exists?(discovery_dump_file)
   emc_cli_cmd = "/opt/Navisphere/bin/naviseccli"
