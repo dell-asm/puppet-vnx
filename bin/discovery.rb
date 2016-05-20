@@ -30,11 +30,11 @@ def collect_emc_vnx_facts(opts)
   facts.merge!(raid_groups(xml_doc))
   facts.merge!(disk_pools(xml_doc))
   facts.merge!(pools(xml_doc))
-
-  # Updating all the facts to string format
+  
   facts.each do |f,v|
-    facts[f]=v.to_json.to_s
+  facts[f]=(v.is_a?String)? v.to_s : v.to_json.to_s
   end
+  
   facts.to_json
 end
 
@@ -56,12 +56,12 @@ def sub_system_info(xml_doc)
     software_info = node.children
     software_info.each do |si|
       next if si.node_name == "text"
-      software_facts[si.node_name] = si.content
+      software_facts[si.node_name] = [si.content]
     end
-    softwares << {software_facts.first.last => software_facts}
+    softwares <<  software_facts
   end
-  facts['Softwares'] = softwares
-
+ 
+  facts["software_data"]={"Softwares"=> softwares}
   facts
 end
 
@@ -73,10 +73,11 @@ def disk_info(xml_doc)
     disk_info_hash = {}
     disk.children.each do |disk_attr|
       next if disk_attr.node_name == "text"
-      disk_info_hash[disk_attr.node_name] = disk_attr.content
+      disk_info_hash[disk_attr.node_name] = [disk_attr.content]
     end
-    facts['disk_info'] << {disk_info_hash.first.last => disk_info_hash}
+    facts['disk_info'] << disk_info_hash
   end
+  facts={"disk_info_data"=>facts}
   facts
 end
 
@@ -95,11 +96,12 @@ def raid_groups(xml_doc)
       if r_attr.node_name == "Disks"
         raid_info['disks'] = raid_disks(r_attr)
       else
-        raid_info[r_attr.node_name] = r_attr.content
+        raid_info[r_attr.node_name] = [r_attr.content]
       end
     end
-    facts['raid_groups'] << {raid_info.first.last => raid_info}
+    facts['raid_groups'] <<  raid_info
   end
+   facts={"raid_group_data"=>facts}
   facts
 end
 
@@ -110,7 +112,7 @@ def raid_disks(r_disks)
     r_disk_info = {}
     disk.children.each do |d_attr|
       next if d_attr.node_name == "text"
-      r_disk_info[d_attr.node_name] = d_attr.content
+      r_disk_info[d_attr.node_name] = [d_attr.content]
     end
     raid_disk_info << r_disk_info
   end
@@ -127,12 +129,13 @@ def disk_pools(xml_doc)
       if d_attr.node_name == "Disks"
         disk_pool_info['Disks'] = raid_disks(d_attr)
       else
-        disk_pool_info[d_attr.node_name] = d_attr.content
+        disk_pool_info[d_attr.node_name] = [d_attr.content]
       end
 
     end
-    facts['disk_pools'] << {disk_pool_info.first.last => disk_pool_info}
+    facts['disk_pools'] << disk_pool_info
   end
+   facts={"disk_pools_data"=>facts}
   facts
 end
 
@@ -146,11 +149,12 @@ def pools(xml_doc)
       if p_attr.node_name == "MLUs"
         pool_info['MLUs'] = pool_mlus(p_attr)
       else
-        pool_info[p_attr.node_name] = p_attr.content
+        pool_info[p_attr.node_name] = [p_attr.content]
       end
     end
-    facts['pools'] << {pool_info.first.last => pool_info}
+    facts['pools'] <<  pool_info
   end
+   facts={'pools_data'=>facts}
   facts
 end
 
@@ -162,7 +166,7 @@ def pool_mlus(mlus)
       mlu_info = {}
       mlu.children.each do |m_attr|
         next if m_attr.node_name == "text"
-        mlu_info[m_attr.node_name] = m_attr.content
+        mlu_info[m_attr.node_name] = [m_attr.content]
       end
       mlu_array << mlu_info
     end
@@ -172,7 +176,9 @@ end
 
 def sub_controller_info(xml_doc)
   facts = {}
+  facts_hba= {}
   controllers = []
+  hba_s={}
   sub_system_servers = xml_doc.xpath('//SAN:SAN/SAN:Servers/SAN:Server')
 
   sub_system_servers.each do |sub_system|
@@ -181,12 +187,18 @@ def sub_controller_info(xml_doc)
     server_info = sub_system.children
     server_info.each do |s|
       next if s.node_name == "text"
-      facts['HBAInfo'] = hba_info(s) if ['HBAInfo'].include?(s.node_name)
-      container_info[s.node_name] = s.content
+       
+        if ['HBAInfo'].include?(s.node_name)
+           a = hba_info(s)
+           facts_hba['HBAInfo'] =[a]
+        end
+      container_info[s.node_name] = [s.content]
     end
-    controllers << {container_info.first.last => container_info}
+    controllers <<  container_info
   end
   facts['controllers'] = controllers
+  facts={"controllers_data"=>facts}
+  facts.merge!({"hbainfo_data"=>facts_hba})
   facts
 end
 
@@ -196,15 +208,15 @@ def hba_info(controller_path)
                 'HostLoginStatus',
                 'HostManagementStatus',
                 'IsAttachedHost']
-  attributes.collect {|x| hba_facts[x] = controller_path.at_xpath("//SAN:#{x}").text}
+  attributes.collect {|x| hba_facts[x] = [controller_path.at_xpath("//SAN:#{x}").text]}
   hba_ports = controller_path.at_xpath('//SAN:HBAPorts/SAN:HBAPort')
   hba_ports_info = []
   hba_ports.children.each do |hba_port|
     next if hba_port.node_name == "text"
     hba_port_attr = hba_port.children
     port_hash = {}
-    ['WWN', 'VendorDescription', 'NumberOfSPPorts' ].collect {|x| port_hash[x] = hba_port_attr.at_xpath("//SAN:#{x}").text}
-    hba_ports_info << {port_hash.first.last => port_hash}
+    ['WWN', 'VendorDescription', 'NumberOfSPPorts' ].collect {|x| port_hash[x] = [hba_port_attr.at_xpath("//SAN:#{x}").text]}
+    hba_ports_info << port_hash
   end
   hba_facts['hba_ports_info'] = hba_ports_info
   hba_facts
