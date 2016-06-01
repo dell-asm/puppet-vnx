@@ -23,18 +23,18 @@ facts = {}
 
 def collect_emc_vnx_facts(opts)
   facts = {}
-  xml_doc = collect_inventory opts
+  xml_doc = collect_inventory(opts)
   facts.merge!(sub_system_info(xml_doc))
   facts.merge!(sub_controller_info(xml_doc))
   facts.merge!(disk_info(xml_doc))
   facts.merge!(raid_groups(xml_doc))
   facts.merge!(disk_pools(xml_doc))
   facts.merge!(pools(xml_doc))
-  
+  facts.merge!(additional_calculations(opts))
   facts.each do |f,v|
   facts[f]=(v.is_a?String)? v.to_s : v.to_json.to_s
   end
-  
+
   facts.to_json
 end
 
@@ -56,12 +56,11 @@ def sub_system_info(xml_doc)
     software_info = node.children
     software_info.each do |si|
       next if si.node_name == "text"
-      software_facts[si.node_name] = [si.content]
+      software_facts[si.node_name] = si.content
     end
     softwares <<  software_facts
   end
- 
-  facts["software_data"]={"Softwares"=> softwares}
+  facts["softwares_data"]={"Softwares"=> softwares}
   facts
 end
 
@@ -73,7 +72,7 @@ def disk_info(xml_doc)
     disk_info_hash = {}
     disk.children.each do |disk_attr|
       next if disk_attr.node_name == "text"
-      disk_info_hash[disk_attr.node_name] = [disk_attr.content]
+      disk_info_hash[disk_attr.node_name] = disk_attr.content
     end
     facts['disk_info'] << disk_info_hash
   end
@@ -96,12 +95,12 @@ def raid_groups(xml_doc)
       if r_attr.node_name == "Disks"
         raid_info['disks'] = raid_disks(r_attr)
       else
-        raid_info[r_attr.node_name] = [r_attr.content]
+        raid_info[r_attr.node_name] = r_attr.content
       end
     end
     facts['raid_groups'] <<  raid_info
   end
-   facts={"raid_group_data"=>facts}
+  facts={"raid_groups_data"=>facts}
   facts
 end
 
@@ -112,7 +111,7 @@ def raid_disks(r_disks)
     r_disk_info = {}
     disk.children.each do |d_attr|
       next if d_attr.node_name == "text"
-      r_disk_info[d_attr.node_name] = [d_attr.content]
+      r_disk_info[d_attr.node_name] = d_attr.content
     end
     raid_disk_info << r_disk_info
   end
@@ -129,7 +128,7 @@ def disk_pools(xml_doc)
       if d_attr.node_name == "Disks"
         disk_pool_info['Disks'] = raid_disks(d_attr)
       else
-        disk_pool_info[d_attr.node_name] = [d_attr.content]
+        disk_pool_info[d_attr.node_name] = d_attr.content
       end
 
     end
@@ -149,7 +148,7 @@ def pools(xml_doc)
       if p_attr.node_name == "MLUs"
         pool_info['MLUs'] = pool_mlus(p_attr)
       else
-        pool_info[p_attr.node_name] = [p_attr.content]
+        pool_info[p_attr.node_name] = p_attr.content
       end
     end
     facts['pools'] <<  pool_info
@@ -166,7 +165,7 @@ def pool_mlus(mlus)
       mlu_info = {}
       mlu.children.each do |m_attr|
         next if m_attr.node_name == "text"
-        mlu_info[m_attr.node_name] = [m_attr.content]
+        mlu_info[m_attr.node_name] = m_attr.content
       end
       mlu_array << mlu_info
     end
@@ -187,12 +186,11 @@ def sub_controller_info(xml_doc)
     server_info = sub_system.children
     server_info.each do |s|
       next if s.node_name == "text"
-       
         if ['HBAInfo'].include?(s.node_name)
            a = hba_info(s)
-           facts_hba['HBAInfo'] =[a]
+           facts_hba['HBAInfo'] = a
         end
-      container_info[s.node_name] = [s.content]
+      container_info[s.node_name] = s.content
     end
     controllers <<  container_info
   end
@@ -208,14 +206,14 @@ def hba_info(controller_path)
                 'HostLoginStatus',
                 'HostManagementStatus',
                 'IsAttachedHost']
-  attributes.collect {|x| hba_facts[x] = [controller_path.at_xpath("//SAN:#{x}").text]}
+  attributes.collect {|x| hba_facts[x] = controller_path.at_xpath("//SAN:#{x}").text}
   hba_ports = controller_path.at_xpath('//SAN:HBAPorts/SAN:HBAPort')
   hba_ports_info = []
   hba_ports.children.each do |hba_port|
     next if hba_port.node_name == "text"
     hba_port_attr = hba_port.children
     port_hash = {}
-    ['WWN', 'VendorDescription', 'NumberOfSPPorts' ].collect {|x| port_hash[x] = [hba_port_attr.at_xpath("//SAN:#{x}").text]}
+    ['WWN', 'VendorDescription', 'NumberOfSPPorts' ].collect {|x| port_hash[x] = hba_port_attr.at_xpath("//SAN:#{x}").text}
     hba_ports_info << port_hash
   end
   hba_facts['hba_ports_info'] = hba_ports_info
@@ -245,6 +243,68 @@ def collect_inventory(opts)
   Nokogiri::XML(data_capture)
 end
 
+def additional_calculations(opts)
+  facts = {}
+  pool_list = {}
+  raw_capacity = 0
+  user_capacity = 0
+  consumed_capacity = 0
+  lun_capacity = 0
+  hot_spare = 0
+  hot_spare_capacity = 0
+  pool_name = ""
+
+   Open3.popen3("/opt/Navisphere/bin/naviseccli -User #{opts[:username]} -Scope 0 -Address #{opts[:server]} -Password #{opts[:password]} storagepool -list") do | stdin, stdout, stderr, wait_thr|
+     stdout.read.split(/\r?\n/).each do |storagepool|
+       pool_name = storagepool.split(":").last.strip if storagepool.include? "Pool Name:"
+       if storagepool.include? "Available Capacity (GBs):"
+         if !pool_name.empty?
+           pool_list[pool_name]= storagepool.split(":").last.to_f
+           pool_name = ""
+         end
+       end
+       available += s.split(":").last.to_i if s.include? "Available Capacity (GBs):"
+       raw_capacity += s.split(":").last.to_i if s.include? "Raw Capacity (GBs):"
+       user_capacity += s.split(":").last.to_i if s.include? "User Capacity (GBs):"
+       consumed_capacity += s.split(":").last.to_i  if s.include? "Consumed Capacity (GBs):"
+     end
+   end
+
+   Open3.popen3("/opt/Navisphere/bin/naviseccli -User #{opts[:username]} -Scope 0 -Address #{opts[:server]} -Password #{opts[:password]} getdisk -all") do | stdin, stdout, stderr, wait_thr|
+     isit_hotspare = false
+     stdout.read.split(/\r?\n/).each do |s|
+      if s.include? "Hot Spare Ready"
+        hot_spare += 1
+        isit_hotspare = true
+       end
+      if (s.include? "User Capacity:") && isit_hotspare
+        hot_spare_capacity += s.split(":").last.to_f
+        isit_hotspare = false
+      end
+     end
+   end
+
+   Open3.popen3("/opt/Navisphere/bin/naviseccli -User #{opts[:username]} -Scope 0 -Address #{opts[:server]} -Password #{opts[:password]} getAll") do | stdin, stdout, stderr, wait_thr|
+     lun_capacity_temp =0
+     stdout.read.split(/\r?\n/).each do |s|
+       lun_capacity_temp = s.split(":").last.to_i if  s.include? "LUN Capacity(Megabytes):"
+       if s.include? "\"~filestorage\""
+         lun_capacity += lun_capacity_temp
+         lun_capacity_temp = 0
+       end
+     end
+   end
+   facts["pool_list"]={"pool"=> [pool_list]}
+   facts["HotspareDisks"]=hot_spare
+   facts["HotspareDiskSpace"]=hot_spare_capacity
+   facts["Free Storage Pool Space"]=available
+   facts["Consumed Disk Space"]=consumed_capacity
+   facts["Free Space for File"]=lun_capacity/1024
+   facts["User Capacity"]=user_capacity
+   facts["Raw Disk Space"]=raw_capacity
+   facts
+end
+
 begin
 
   args=['--trace']
@@ -266,4 +326,3 @@ else
     File.write(opts[:output], facts)
   end
 end
-
