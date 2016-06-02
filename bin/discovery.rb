@@ -17,6 +17,7 @@ opts = Trollop::options do
   opt :timeout, 'command timeout', :default => 240
   opt :community_string, 'EMC VNX community string', :default => 'public'
   opt :output, 'output facts to a file', :type => :string, :required => true
+  opt :credential_id, 'Credential ID (UNUSED)'
 end
 
 facts = {}
@@ -246,6 +247,7 @@ end
 def additional_calculations(opts)
   facts = {}
   pool_list = {}
+  available = 0
   raw_capacity = 0
   user_capacity = 0
   consumed_capacity = 0
@@ -263,10 +265,10 @@ def additional_calculations(opts)
            pool_name = ""
          end
        end
-       available += s.split(":").last.to_i if s.include? "Available Capacity (GBs):"
-       raw_capacity += s.split(":").last.to_i if s.include? "Raw Capacity (GBs):"
-       user_capacity += s.split(":").last.to_i if s.include? "User Capacity (GBs):"
-       consumed_capacity += s.split(":").last.to_i  if s.include? "Consumed Capacity (GBs):"
+       available += storagepool.split(":").last.to_i if storagepool.include? "Available Capacity (GBs):"
+       raw_capacity += storagepool.split(":").last.to_i if storagepool.include? "Raw Capacity (GBs):"
+       user_capacity += storagepool.split(":").last.to_i if storagepool.include? "User Capacity (GBs):"
+       consumed_capacity += storagepool.split(":").last.to_i  if storagepool.include? "Consumed Capacity (GBs):"
      end
    end
 
