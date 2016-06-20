@@ -14,14 +14,14 @@ Puppet::Type.newtype(:transport) do
   newparam(:server) do
   end
 
-  newparam(:scope) do
-    defaultto 0
-    newvalues(0,1,2)
-  end
+#  newparam(:scope) do
+#    defaultto 0
+#    newvalues(0,1,2)
+#  end
 
-  newparam(:cli_path) do
-    defaultto "/opt/Navisphere/bin/naviseccli"
-  end
+#  newparam(:cli_path) do
+#    defaultto "/opt/Navisphere/bin/naviseccli"
+#  end
 end
 
 unless Puppet::Type.metaparams.include? :transport
