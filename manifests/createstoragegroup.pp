@@ -3,13 +3,12 @@ define vnx::createstoragegroup(
   $host_name,
   $luns={},
 ){
-
-vnx_storagegroup{"$name":
-sg_name=>"$sgname",
-luns=>$luns,
-host_name=>$host_name,
-addonly=>"true",
-ensure=>"present",
-transport=>"$transport",
+vnx_storagegroup{$name:
+ensure    =>  'present',
+sg_name   =>  '$sgname',
+luns      =>  $luns,
+host_name =>  $host_name,
+addonly   =>  true,
+transport =>  $transport,
 }
 }
