@@ -76,38 +76,47 @@ Puppet::Type.type(:vnx_initiator).provide(:vnx_initiator) do
   end
 
   def exists?
-    get_instances.find{|initiator| initiator[:hba_uid] == resource[:hba_uid]}
+    @initiator = get_instances.find{|initiator| initiator[:hba_uid] == resource[:hba_uid]}
   end
 
   def set_initiator
     resource[:ports].each do |port|
+      if @initiator
+        existing_initiator = @initiator[:ports].find { |x| x[:sp].to_s == port["sp"] }
+        if existing_initiator
+          if existing_initiator[:sp_port].to_s == port["sp_port"].to_s &&
+              resource[:hostname] == @initiator[:hostname]
+            next
+          end
+        end
+      end
       if port["storage_group"]
         gname = port["storage_group"]
-      #else
-      #  gname = create_temp_storage_group
+        #else
+        #  gname = create_temp_storage_group
       end
 
       begin
         #debug "Try to create #{resource[:name]} #{resource[:ip_address]}, #{resource[:hostname]} on #{port[:storagegroup]} #{port[:so]} #{port[:sp_port]}"
         command = ["storagegroup", "-setpath", "-hbauid", resource[:hba_uid], "-sp", port["sp"], "-spport", port["sp_port"].to_s, "-o"]
         if resource[:ip_address] != nil
-        	command += ["-ip",resource[:ip_address]]
+          command += ["-ip",resource[:ip_address]]
         end
-        
+
         if resource[:hostname] != nil
-        	command +=["-host",resource[:hostname]]
+          command +=["-host",resource[:hostname]]
         end
-        
-		if resource[:failovermode] != nil
-			command +=["-failovermode", resource[:failovermode]]
-		end
-		
-		if resource[:arraycommpath] != nil
-			command +=["-arraycommpath", resource[:arraycommpath]]
-		end
-		
+
+        if resource[:failovermode] != nil
+          command +=["-failovermode", resource[:failovermode]]
+        end
+
+        if resource[:arraycommpath] != nil
+          command +=["-arraycommpath", resource[:arraycommpath]]
+        end
+
         if gname != nil
-        	command += ["-gname", gname] 
+          command += ["-gname", gname]
         end
         run(command)
       ensure

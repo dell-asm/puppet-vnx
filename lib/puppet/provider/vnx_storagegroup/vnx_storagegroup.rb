@@ -26,8 +26,12 @@ Puppet::Type.type(:vnx_storagegroup).provide(:vnx_storagegroup) do
     # rescue
     #   run ["lun", "-create", "-l", alu]
     # end
-    args = ["storagegroup", "-addhlu", "-gname", resource[:sg_name], "-hlu", hlu, "-alu", alu]
-#    puts "#{args}"
+    if hlu.empty?
+      args = ["storagegroup", "-addhlu", "-gname", resource[:sg_name], "-alu", alu]
+    else
+      args = ["storagegroup", "-addhlu", "-gname", resource[:sg_name], "-hlu", hlu, "-alu", alu]
+    end
+    Puppet.debug "#{args}"
     run args
   end
 
@@ -206,7 +210,9 @@ Puppet::Type.type(:vnx_storagegroup).provide(:vnx_storagegroup) do
                         []
                       else
                         pairs.map{|pair| pair.values_at('hlu', 'alu').map &:to_s}.sort
-                      end
+                     end
+      require 'pry'
+      binding.pry
       current_properties = get_current_properties
       current_pairs = current_properties[:luns]
       is_pairs = if current_pairs.nil? || current_pairs == :absent

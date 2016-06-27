@@ -32,6 +32,8 @@ def collect_emc_vnx_facts(opts)
   facts.merge!(disk_pools(xml_doc))
   facts.merge!(pools(xml_doc))
   facts.merge!(additional_calculations(opts))
+  facts.merge!(initiator_info(opts))
+  facts.merge!(storage_group_info(opts))
   facts.each do |f,v|
   facts[f]=(v.is_a?String)? v.to_s : v.to_json.to_s
   end
@@ -307,6 +309,143 @@ def additional_calculations(opts)
    facts
 end
 
+
+def initiator_info(opts)
+  emc_cli_cmd = "/opt/Navisphere/bin/naviseccli"
+  raise("Naviseccli not installed") unless File.exists?(emc_cli_cmd)
+  Open3.popen3("#{emc_cli_cmd} -User #{opts[:username]} -Scope 0 -Address #{opts[:server]} -Password #{opts[:password]} port -list -hba ") do |stdin, stdout, stderr, wait_thr|
+    parse_initiator_info(stdout.read)
+  end
+end
+
+def storage_group_info(opts)
+  emc_cli_cmd = "/opt/Navisphere/bin/naviseccli"
+  raise("Naviseccli not installed") unless File.exists?(emc_cli_cmd)
+  Open3.popen3("#{emc_cli_cmd} -User #{opts[:username]} -Scope 0 -Address #{opts[:server]} -Password #{opts[:password]} storagegroup -list ") do |stdin, stdout, stderr, wait_thr|
+    parse_storage_group_info(stdout.read)
+  end
+end
+
+def parse_initiator_info(data_capture)
+  initiators = []
+  initiator_lines = data_capture.split("Information about each HBA:\n\n")
+  initiator_lines.each do |line_info|
+    next if line_info =~ /\A\s+\z/ #skip blank line
+    initiator_info = {}
+    hba_info, hba_ports = line_info.split "Information about each port of this HBA:\n\n"
+    hba_info.split("\n").each do |line|
+      if line.start_with?('HBA UID:')
+        initiator_info[:hba_uid] = line.sub('HBA UID:', '').strip
+        next
+      end
+
+      if line.start_with?('Server Name:')
+        initiator_info[:hostname] = line.sub('Server Name:', '').strip
+        next
+      end
+
+      if line.start_with?('Server IP Address:')
+        initiator_info[:ip_address] = line.sub('Server IP Address:', '').strip
+        initiator_info[:ip_address] = nil if initiator_info[:ip_address] == "UNKNOWN"
+        next
+      end
+    end
+
+    ports = []
+    hba_ports.split("\n\n").each do |port_info|
+      port = {}
+      port_info.split("\n").each do |line|
+        line.strip!
+
+        if line.start_with?('SP Name:')
+          port[:sp] = (line.sub('SP Name:', '').strip == "SP A" ? :a : :b)
+          next
+        end
+
+        if line.start_with?('SP Port ID:')
+          port[:sp_port] = line.sub('SP Port ID:', '').strip.to_i
+          next
+        end
+
+        if line.start_with?('StorageGroup Name:')
+          port[:storage_group_name] = line.sub('StorageGroup Name:', '').strip
+          next
+        end
+
+      end
+      ports << port unless port.empty?
+    end
+    initiator_info[:ports] = ports
+    initiators << initiator_info
+  end
+  facts ||= {}
+  facts['initiators'] = initiators
+  facts
+end
+
+
+def parse_storage_group_info(data_capture)
+  storage_groups = []
+  data_capture.scan(/(Storage Group Name:.*?Shareable:\s+\S+)/m).each do |storage_group|
+    line_values = storage_group.first.split /\n+/
+    line_values.shift while line_values.first.empty?
+    storage_group = {}
+    while line_value = line_values.shift
+      if line_value.start_with?('Storage Group Name:')
+        storage_group[:sg_name] = line_value[(line_value.index(":") + 1)..-1].strip
+        next
+      end
+
+      if line_value.start_with?('Storage Group UID:')
+        storage_group[:uid] = line_value[(line_value.index(":") + 1)..-1].strip
+        next
+      end
+
+      if line_value.start_with?('Shareable:')
+        shareable = line_value[(line_value.index(":") + 1)..-1].strip
+        storage_group[:shareable] = (shareable == "YES" ? :true : :false)
+        next
+      end
+
+      if line_value.start_with?('HBA/SP Pairs:')
+        if line_values.first.start_with? "  HBA UID"
+          line_values.shift
+          if line_values.first.start_with? "  -----"
+            line_values.shift
+            pairs = []
+            while line_values.first.start_with? "  "
+              hba_uid, sp_name, sp_port = line_values.first.strip.split(/\s{2,}/)
+              pairs << ({:hba_uid => hba_uid, :sp_name => (sp_name == "SP A" ? :a : :b), :sp_port => sp_port.to_i})
+              line_values.shift
+            end
+            storage_group[:HBAs] = pairs
+          end
+        end
+      end
+
+      if line_value.start_with?('HLU/ALU Pairs:')
+        if line_values.first.start_with? "  HLU Number"
+          line_values.shift
+          if line_values.first.start_with? "  -----"
+            line_values.shift
+            pairs = []
+            while line_values.first.start_with? "  "
+              hlu, alu = line_values.first.strip.split.map{|v| v.to_i}
+              pairs << ({'hlu' => hlu, 'alu' => alu})
+              line_values.shift
+            end
+            storage_group[:luns] = pairs
+          end
+        end
+      end
+    end
+    storage_groups << storage_group
+  end
+  facts ||= {}
+  facts['storage_groups'] = storage_groups
+  facts
+end
+
 begin
 
   args=['--trace']
@@ -328,3 +467,4 @@ else
     File.write(opts[:output], facts)
   end
 end
+
