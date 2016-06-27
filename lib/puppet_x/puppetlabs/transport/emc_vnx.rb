@@ -90,8 +90,8 @@ module PuppetX
           option[:password] = res.provider.send(:password)
           option[:host_addr] = res.provider.send(:server)
           option[:array] = res.provider.send(:name)
-          option[:scope] = res.provider.send(:scope)
-          option[:cli_path] = res.provider.send(:cli_path)
+          option[:scope] = res[:options]['scope']
+          option[:cli_path] = res[:options]['cli_path']
 
           @vnxcli = Vnx.new(option)
           @vnxcli.connect
