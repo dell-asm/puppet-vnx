@@ -92,8 +92,6 @@ Puppet::Type.type(:vnx_initiator).provide(:vnx_initiator) do
       end
       if port["storage_group"]
         gname = port["storage_group"]
-        #else
-        #  gname = create_temp_storage_group
       end
 
       begin
