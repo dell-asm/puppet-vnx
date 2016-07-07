@@ -267,7 +267,19 @@ Puppet::Type.type(:vnx_storagegroup).provide(:vnx_storagegroup) do
   def flush
     # destroy
     if @property_flush[:ensure] == :absent
-      run(["storagegroup", "-destroy", "-gname", resource[:sg_name], "-o"])
+
+      if resource[:host_name]
+        run(["storagegroup", "-disconnecthost", "-host", resource[:host_name], "-gname", resource[:sg_name], "-o"])
+      end
+      temp = run(["storagegroup","-list","-host","-gname", resource[:sg_name]])
+      k=[]
+      temp.split(/\n/).each do |s|
+        k << s.split("Host name:")[1].to_s.strip unless  k.include?(s.split("Host name:")[1].to_s.strip)
+      end
+      k= k.reject{|s| s.empty?}
+      if k.empty?
+        run(["storagegroup", "-destroy", "-gname", resource[:sg_name], "-o"])
+      end
       @property_hash[:ensure] = :absent
       return
     end

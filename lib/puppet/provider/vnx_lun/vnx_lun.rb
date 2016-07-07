@@ -298,9 +298,61 @@ Puppet::Type.type(:vnx_lun).provide(:vnx_lun) do
     @property_flush[:ensure] = :absent
   end
 
+  def get_lun_number
+    lunNumber = nil
+    temp = run(["lun", "-list", "-name", resource[:lun_name]])
+
+    temp.each_line do |s|
+      if s.split("LOGICAL UNIT NUMBER")[1]
+        lunNumber = s.split("LOGICAL UNIT NUMBER")[1].to_i
+      end
+    end
+
+    lunNumber
+  end
+
+  def get_hlu_sg_of_lun
+    luns_hlu = nil
+    sgname = nil
+    temp = run(["storagegroup","-list"])
+    sg_flag = 0
+    hlu_flag = 0
+
+    temp.each_line do |s|
+      if s.include?("Storage Group Name:")
+        sgname = s.split("Storage Group Name:")[1].to_s.strip
+        sg_flag = 1
+        next
+      end
+      if sg_flag == 1 && s.include?("  HLU Number     ALU Number")
+        hlu_flag = 1
+        next
+      end
+      if sg_flag == 1 && hlu_flag == 1 && !s.include?("Shareable:") && !s.include?("-------")
+        if get_lun_number ==  s.split(" ")[1].to_i
+          luns_hlu = s.split(" ")[0].to_i
+        end
+        next
+      end
+      if s.include?("Shareable:")
+        sg_flag = 0
+        hlu_flag = 0
+      end
+    end
+
+    return luns_hlu, sgname
+  end
+
+
+  def remove_lun_from_sg
+    lun_hlu, sgname = get_hlu_sg_of_lun
+    run(["storagegroup", "-removehlu", "-gname", sgname, "-hlu", lun_hlu, "-o"]) if lun_hlu && sgname
+  end
+
   def flush
     # destroy
     if @property_flush[:ensure] == :absent
+      remove_lun_from_sg if resource[:lun_name]
       args = ["lun", "-destroy"]
       args << "-name" << resource[:lun_name]
       args << "-o"
