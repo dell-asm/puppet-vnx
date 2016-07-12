@@ -26,8 +26,10 @@ Puppet::Type.type(:vnx_storagegroup).provide(:vnx_storagegroup) do
     # rescue
     #   run ["lun", "-create", "-l", alu]
     # end
-    args = ["storagegroup", "-addhlu", "-gname", resource[:sg_name], "-alu", alu]
-    run args
+    if hlu && alu
+      args = ["storagegroup", "-addhlu", "-gname", resource[:sg_name], "-hlu", hlu, "-alu", alu]
+      run args
+    end
   end
 
   def removehlu hlu
