@@ -314,6 +314,7 @@ Puppet::Type.type(:vnx_lun).provide(:vnx_lun) do
   def get_hlu_sg_of_lun
     luns_hlu = nil
     sgname = nil
+    final_sgname = nil
     temp = run(["storagegroup","-list"])
     sg_flag = 0
     hlu_flag = 0
@@ -331,6 +332,7 @@ Puppet::Type.type(:vnx_lun).provide(:vnx_lun) do
       if sg_flag == 1 && hlu_flag == 1 && !s.include?("Shareable:") && !s.include?("-------")
         if get_lun_number ==  s.split(" ")[1].to_i
           luns_hlu = s.split(" ")[0].to_i
+          final_sgname = sgname
         end
         next
       end
@@ -340,7 +342,7 @@ Puppet::Type.type(:vnx_lun).provide(:vnx_lun) do
       end
     end
 
-    return luns_hlu, sgname
+    return luns_hlu, final_sgname
   end
 
 
