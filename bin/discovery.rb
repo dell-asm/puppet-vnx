@@ -34,11 +34,25 @@ def collect_emc_vnx_facts(opts)
   facts.merge!(additional_calculations(opts))
   facts.merge!(initiator_info(opts))
   facts.merge!(storage_group_info(opts))
+  facts.merge!(addons_info(opts))
   facts.each do |f,v|
   facts[f]=(v.is_a?String)? v.to_s : v.to_json.to_s
   end
 
   facts.to_json
+end
+
+def addons_info(opts)
+  Open3.popen3("/opt/Navisphere/bin/naviseccli -User #{opts[:username]} -Scope 0 -Address #{opts[:server]} -Password #{opts[:password]} ndu -list") do | stdin, stdout, stderr, wait_thr|
+    thin = snap = compression = false
+    stdout.read.split(/\r?\n/).each do |s|
+      thin = true if s.include?("-ThinProvisioning")
+      compression = true if s.include?("-Compression")
+      snap = true if s.include?("snap")
+    end
+  end
+  facts = {'addons_data' => { 'addons' => [{'thin' => thin}, {'compression' => compression}, {'snap' => snap}]}}
+  facts
 end
 
 def sub_system_info(xml_doc)
@@ -467,4 +481,3 @@ else
     File.write(opts[:output], facts)
   end
 end
-
