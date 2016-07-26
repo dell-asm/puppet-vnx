@@ -43,8 +43,8 @@ def collect_emc_vnx_facts(opts)
 end
 
 def addons_info(opts)
+  thin = snap = compression = false
   Open3.popen3("/opt/Navisphere/bin/naviseccli -User #{opts[:username]} -Scope 0 -Address #{opts[:server]} -Password #{opts[:password]} ndu -list") do | stdin, stdout, stderr, wait_thr|
-    thin = snap = compression = false
     stdout.read.split(/\r?\n/).each do |s|
       thin = true if s.include?("-ThinProvisioning")
       compression = true if s.include?("-Compression")
