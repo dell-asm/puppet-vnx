@@ -287,6 +287,21 @@ Puppet::Type.type(:vnx_lun).provide(:vnx_lun) do
     end
 
     run(args)
+
+    if resource[:type] == :compressed
+      lun_n = nil
+      lun_info = run(["lun", "-list", "-name", resource[:lun_name]])
+
+      lun_info.split("\n").each do |line|
+        pattern = "LOGICAL UNIT NUMBER"
+        if line.start_with?(pattern)
+          lun_n = line.sub(pattern, "").strip.to_i
+          break
+        end
+      end
+
+      run(["compression", "-on", "-l", lun_n]) if lun_n
+    end
     @property_hash[:ensure] = :present
   end
 
