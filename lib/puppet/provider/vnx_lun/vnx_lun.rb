@@ -211,8 +211,8 @@ Puppet::Type.type(:vnx_lun).provide(:vnx_lun) do
     # expand
     args = ["lun", "-expand", "-name", resource[:lun_name]]
     origin_length = args.length
-    args << "-capacity" << resource[:capacity] if @property_flush[:capacity]
-    args << "-sq" << resource[:size_qual] if @property_flush[:size_qual]
+    args << "-capacity" << size_to_sizequal(resource[:capacity])[0] if @property_flush[:capacity]
+    args << "-sq" << size_to_sizequal(resource[:capacity])[1] if @property_flush[:capacity]
     args << "-ignoreThresholds" if (resource[:ignore_thresholds] == :true)
     args << "-o"
     run(args) if args.length > origin_length + 1
@@ -247,6 +247,16 @@ Puppet::Type.type(:vnx_lun).provide(:vnx_lun) do
     run(args) if args.length > origin_length + 1
   end
 
+  def size_to_sizequal(size)
+    unless size =~ /^\d+([mgt]$|(MB|GB|TB)$)/
+      raise ArgumentError, '%s is not a valid volume size.' % size
+    end
+    size_type = size[/MB|GB|TB|m|g|t/]
+    sizequal = size_type.gsub!(/MB|GB|TB|m|g|t/, "m" => "mb", "g" => "gb", "t" => "tb", "MB" => "mb", "GB" => "gb", "TB" => "tb")
+    size = size.to_i
+    return size, sizequal
+  end
+
   def create_lun
     args = ['lun', '-create']
     if resource[:type] == :snap
@@ -260,7 +270,8 @@ Puppet::Type.type(:vnx_lun).provide(:vnx_lun) do
       args << "-allowInbandSnapAttach" << (resource[:allow_inband_snap_attach] == :true ? "yes" : "no") if resource[:allow_inband_snap_attach]
     else
       args << "-type" << (resource[:type] == :thin ? 'Thin' : 'NonThin') if resource[:type]
-      args << "-capacity" << resource[:capacity] if resource[:capacity]
+      args << "-capacity" << size_to_sizequal(resource[:capacity])[0] if resource[:capacity]
+      args << "-sq" << size_to_sizequal(resource[:capacity])[1] if resource[:capacity]
       args << "-poolId" << resource[:pool_id] if resource[:pool_id]
       args << "-poolName" << resource[:pool_name] if resource[:pool_name]
       args << "-sp" << resource[:default_owner].to_s.upcase if resource[:default_owner]
