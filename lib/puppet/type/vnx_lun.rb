@@ -39,7 +39,7 @@ Puppet::Type.newtype(:vnx_lun) do
 
   newparam(:type) do
     desc "LUN type, THIN or Thick. Unchangeable once created."
-    newvalues(:thin, :nonthin, :snap)
+    newvalues(:thin, :nonthin, :snap, :compressed)
   end
 
   newproperty(:capacity) do
