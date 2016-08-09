@@ -50,12 +50,7 @@ Puppet::Type.newtype(:vnx_lun) do
       end
     end
   end
-
-  newproperty(:size_qual) do
-    desc "Size qualifier for the LUN capacity"
-    newvalues(:gb, :tb, :mb, :bc)
-  end
-
+  
   newproperty(:pool_name) do
     desc "Storage pool the LUN will belong to. Unchangeable once created."
   end
