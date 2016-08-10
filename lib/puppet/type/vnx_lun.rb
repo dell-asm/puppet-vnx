@@ -44,16 +44,13 @@ Puppet::Type.newtype(:vnx_lun) do
 
   newproperty(:capacity) do
     desc "The LUN capacity"
-    munge do |value|
-      value.to_i
+    validate do |value|
+      unless value =~ /^\d+([mgt]$|(MB|GB|TB)$)/
+       	raise ArgumentError, '%s is not a valid volume size.' % value
+      end
     end
   end
-
-  newproperty(:size_qual) do
-    desc "Size qualifier for the LUN capacity"
-    newvalues(:gb, :tb, :mb, :bc)
-  end
-
+  
   newproperty(:pool_name) do
     desc "Storage pool the LUN will belong to. Unchangeable once created."
   end
