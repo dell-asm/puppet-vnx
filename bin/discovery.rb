@@ -51,7 +51,7 @@ def addons_info(opts)
       snap = true if s.include?("snap")
     end
   end
-  facts = {'addons_data' => { 'addons' => [{'thin' => thin}, {'compression' => compression}, {'snap' => snap}]}}
+  facts = {'addons_data' => { 'addons' => [{'nonthin' => true}, {'thin' => thin}, {'compression' => compression}, {'snap' => snap}]}}
   facts
 end
 
