@@ -46,4 +46,13 @@ describe Puppet::Type.type(:vnx_lun).provider(:vnx_lun) do
       end
     end
   end
+
+  describe "#get_lun_capacity_mb" do
+    context "When you pass lun number" do
+      it "returns LUN capacity in Megabytes" do
+        provider.stubs(:run).returns("LUN Capacity(Megabytes): 10\nLUN Capacity(Blocks): 2048")
+        expect(provider.get_lun_capacity_mb).to eq(10)
+      end
+    end
+  end
 end

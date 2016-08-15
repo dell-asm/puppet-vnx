@@ -24,6 +24,20 @@ Puppet::Type.type(:vnx_lun).provide(:vnx_lun) do
     self.class.get_lun_properties lun_info
   end
 
+  def get_lun_capacity_mb
+    lun_info = run(["getlun", get_current_properties[:lun_number]])
+    lun_capacity_mb = 0
+    lun_info.split("\n").each do |line|
+      pattern = "LUN Capacity(Megabytes):"
+      if line.start_with?(pattern)
+        lun_capacity_mb = line.sub(pattern, "").strip.to_i
+        break
+      end
+    end
+
+    lun_capacity_mb
+  end
+
   def self.get_lun_properties lun_info
     lun = {}
     lun_info.split("\n").each do |line|
@@ -216,7 +230,9 @@ Puppet::Type.type(:vnx_lun).provide(:vnx_lun) do
     args << "-sq" << units if units
     args << "-ignoreThresholds" if (resource[:ignore_thresholds] == :true)
     args << "-o"
-    run(args) if args.length > origin_length + 1
+    run(args) if "gb" == units && get_current_properties[:capacity] < capacity
+    run(args) if "tb" == units && get_current_properties[:capacity] < capacity*1024
+    run(args) if "mb" == units && get_lun_capacity_mb < capacity
 
     # modify
     args = ["lun", "-modify", "-name", resource[:lun_name]]
@@ -252,7 +268,7 @@ Puppet::Type.type(:vnx_lun).provide(:vnx_lun) do
     unless size.match /^(\d+)([mgt]$|(MB|GB|TB)$)/
       raise ArgumentError, '%s is not a valid volume size.' % size
     end
-    
+
     return  Integer($1), $2.gsub!(/MB|GB|TB|m|g|t/, "m" => "mb", "g" => "gb", "t" => "tb", "MB" => "mb", "GB" => "gb", "TB" => "tb")
   end
 
